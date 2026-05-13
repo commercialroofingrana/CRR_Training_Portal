@@ -82,24 +82,42 @@ app.use(express.static(path.join(__dirname, 'public')));
 const INJECT_SCRIPT = `
 <script>
 (function(){
+  function getText(ids) {
+    for (var i=0; i<ids.length; i++) {
+      var el = document.getElementById(ids[i]);
+      if (el && el.textContent.trim() && el.textContent.trim() !== '—') return el.textContent.trim();
+    }
+    return '';
+  }
+  function getEl(ids) {
+    for (var i=0; i<ids.length; i++) {
+      var el = document.getElementById(ids[i]);
+      if (el) return el;
+    }
+    return null;
+  }
   var _origSubmitAck = window.submitAck;
   window.submitAck = function(){
     if (_origSubmitAck) _origSubmitAck.call(this);
     setTimeout(function(){
-      var n = document.getElementById('cert-name') || document.getElementById('cn2');
-      var d = document.getElementById('cert-date') || document.getElementById('cd');
-      var t = document.getElementById('cert-time') || document.getElementById('ct');
-      var s = document.getElementById('cert-score') || document.getElementById('cs');
-      var c = document.getElementById('certificate') || document.getElementById('cert');
+      // Support all three template families:
+      // A: BBP/Cyber (cert-employee-name, cert-date-out, cert-time-out, cert-card)
+      // B: 12 in-house EN (cert-name, cert-date, cert-time, certificate)
+      // C: 14 ES modules (cn2, cd, ct, cs, cert)
+      var name = getText(['cert-employee-name','cert-name','cn2']) || window.employeeName || '';
+      var date = getText(['cert-date-out','cert-date','cd']);
+      var time = getText(['cert-time-out','cert-time','ct']);
+      var score = getText(['cert-score','cs']);
+      var certEl = getEl(['cert-card','certificate','cert']);
       var payload = {
-        employeeName:    (n ? n.textContent : '') || '',
+        employeeName:    name,
         moduleId:        window.__CRR_MODULE_ID__   || '',
-        moduleTitle:     window.__CRR_MODULE_TITLE__ || document.title.split(' | ')[0],
+        moduleTitle:     window.__CRR_MODULE_TITLE__ || document.title,
         language:        window.__CRR_MODULE_LANG__  || 'en',
-        dateCompleted:   d ? d.textContent : '',
-        timeSpent:       t ? t.textContent : '',
-        quizScore:       s ? s.textContent : '',
-        certificateHTML: c ? c.outerHTML   : ''
+        dateCompleted:   date,
+        timeSpent:       time,
+        quizScore:       score,
+        certificateHTML: certEl ? certEl.outerHTML : ''
       };
       fetch('/api/complete', {
         method: 'POST',
