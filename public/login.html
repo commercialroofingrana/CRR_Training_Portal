@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Sign In — CRR Safety Training</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{--gold:#c9a227;--gold2:#f5c842;--bg:#0a0a0a;--card:#141414;--border:#2a2a2a;--text:#e8e8e8;--muted:#777;--red:#ef4444;--green:#10b981}
+body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}
+.box{background:var(--card);border:1px solid var(--border);border-radius:20px;padding:44px 40px;width:100%;max-width:420px}
+.logo{font-size:2.6rem;font-weight:900;background:linear-gradient(135deg,var(--gold),var(--gold2));-webkit-background-clip:text;-webkit-text-fill-color:transparent;text-align:center;margin-bottom:4px}
+.logo-sub{text-align:center;font-size:0.8em;color:var(--muted);letter-spacing:1px;text-transform:uppercase;margin-bottom:30px}
+.tabs{display:flex;background:#1a1a1a;border:1px solid var(--border);border-radius:10px;margin-bottom:28px;overflow:hidden}
+.tab{flex:1;padding:10px;font-size:0.9em;font-weight:700;cursor:pointer;border:none;background:transparent;color:var(--muted);transition:all 0.2s;letter-spacing:0.5px}
+.tab.active{background:linear-gradient(135deg,var(--gold),var(--gold2));color:#111}
+label{display:block;font-size:0.78em;font-weight:600;color:var(--gold);letter-spacing:0.5px;text-transform:uppercase;margin-bottom:7px}
+input{width:100%;padding:12px 16px;background:#1e1e1e;border:2px solid var(--border);border-radius:9px;color:var(--text);font-size:0.95em;outline:none;transition:border-color 0.2s;margin-bottom:18px}
+input:focus{border-color:var(--gold)}
+.btn{width:100%;padding:13px;background:linear-gradient(135deg,var(--gold),var(--gold2));color:#111;border:none;border-radius:9px;font-size:1em;font-weight:800;cursor:pointer;transition:opacity 0.2s;margin-top:4px}
+.btn:hover{opacity:0.9}
+.err{color:var(--red);font-size:0.85em;margin-top:10px;display:none;text-align:center;padding:10px;background:rgba(239,68,68,0.08);border-radius:7px;border:1px solid rgba(239,68,68,0.2)}
+.ok{color:var(--green);font-size:0.85em;margin-top:10px;display:none;text-align:center;padding:10px;background:rgba(16,185,129,0.08);border-radius:7px;border:1px solid rgba(16,185,129,0.2)}
+.back{display:block;text-align:center;margin-top:22px;color:var(--muted);font-size:0.82em;cursor:pointer;transition:color 0.2s}
+.back:hover{color:var(--gold)}
+.note{font-size:0.78em;color:#555;text-align:center;margin-top:8px;line-height:1.5}
+</style>
+</head>
+<body>
+<div class="box">
+  <div class="logo">CRR</div>
+  <div class="logo-sub">Safety Training Portal</div>
+
+  <div class="tabs">
+    <button class="tab active" id="tab-in" onclick="showTab('in')">Sign In</button>
+    <button class="tab" id="tab-up" onclick="showTab('up')">Create Account</button>
+  </div>
+
+  <!-- Sign In -->
+  <div id="form-in">
+    <label>Email Address</label>
+    <input type="email" id="in-email" placeholder="your@email.com" onkeydown="if(event.key==='Enter')doLogin()">
+    <label>Password</label>
+    <input type="password" id="in-pw" placeholder="Your password" onkeydown="if(event.key==='Enter')doLogin()">
+    <button class="btn" onclick="doLogin()">Sign In →</button>
+  </div>
+
+  <!-- Register -->
+  <div id="form-up" style="display:none">
+    <label>Full Name</label>
+    <input type="text" id="up-name" placeholder="e.g. Juan Martinez" onkeydown="if(event.key==='Enter')doRegister()">
+    <label>Email Address</label>
+    <input type="email" id="up-email" placeholder="your@email.com" onkeydown="if(event.key==='Enter')doRegister()">
+    <label>Password</label>
+    <input type="password" id="up-pw" placeholder="Minimum 6 characters" onkeydown="if(event.key==='Enter')doRegister()">
+    <button class="btn" onclick="doRegister()">Create Account →</button>
+    <div class="note">After registering, your completed trainings will be tracked to your account so you can see which ones have expired.</div>
+  </div>
+
+  <div class="err" id="auth-err"></div>
+  <div class="ok"  id="auth-ok"></div>
+  <div class="back" onclick="location.href='/'">← Back to Training Portal</div>
+</div>
+
+<script>
+const REDIRECT = sessionStorage.getItem('crr_login_redirect') || '/dashboard.html';
+
+function showTab(t) {
+  document.getElementById('form-in').style.display = t==='in' ? '' : 'none';
+  document.getElementById('form-up').style.display = t==='up' ? '' : 'none';
+  document.getElementById('tab-in').classList.toggle('active', t==='in');
+  document.getElementById('tab-up').classList.toggle('active', t==='up');
+  clearMsg();
+}
+
+function showErr(msg) {
+  const e = document.getElementById('auth-err');
+  e.textContent = msg; e.style.display = 'block';
+  document.getElementById('auth-ok').style.display = 'none';
+}
+function showOk(msg) {
+  const e = document.getElementById('auth-ok');
+  e.textContent = msg; e.style.display = 'block';
+  document.getElementById('auth-err').style.display = 'none';
+}
+function clearMsg() {
+  document.getElementById('auth-err').style.display = 'none';
+  document.getElementById('auth-ok').style.display  = 'none';
+}
+
+async function doLogin() {
+  clearMsg();
+  const email    = document.getElementById('in-email').value.trim();
+  const password = document.getElementById('in-pw').value;
+  if (!email || !password) return showErr('Please enter your email and password.');
+  try {
+    const r = await fetch('/api/auth/login', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ email, password })
+    });
+    const data = await r.json();
+    if (!r.ok) return showErr(data.error || 'Sign in failed.');
+    saveAndRedirect(data);
+  } catch(e) { showErr('Server error. Please try again.'); }
+}
+
+async function doRegister() {
+  clearMsg();
+  const name     = document.getElementById('up-name').value.trim();
+  const email    = document.getElementById('up-email').value.trim();
+  const password = document.getElementById('up-pw').value;
+  if (!name || !email || !password) return showErr('Please fill in all fields.');
+  try {
+    const r = await fetch('/api/auth/register', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ name, email, password })
+    });
+    const data = await r.json();
+    if (!r.ok) return showErr(data.error || 'Registration failed.');
+    saveAndRedirect(data);
+  } catch(e) { showErr('Server error. Please try again.'); }
+}
+
+function saveAndRedirect(data) {
+  localStorage.setItem('crr_employee_token', data.token);
+  localStorage.setItem('crr_employee_name',  data.name);
+  localStorage.setItem('crr_employee_email', data.email);
+  sessionStorage.removeItem('crr_login_redirect');
+  location.href = REDIRECT;
+}
+
+// If already logged in, redirect to dashboard
+const existingToken = localStorage.getItem('crr_employee_token');
+if (existingToken) {
+  fetch('/api/auth/me', { headers: {'x-employee-token': existingToken} })
+    .then(r => r.ok ? location.href = REDIRECT : null)
+    .catch(() => {});
+}
+</script>
+</body>
+</html>

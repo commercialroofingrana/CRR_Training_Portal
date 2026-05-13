@@ -149,9 +149,31 @@ tbody td{padding:13px 16px;font-size:0.87em;vertical-align:middle}
     <!-- Stats -->
     <div class="stats" id="stats-row">
       <div class="stat-card"><div class="stat-label">Total Completions</div><div class="stat-val" id="s-total">—</div><div class="stat-sub">all time</div></div>
-      <div class="stat-card"><div class="stat-label">Team Members</div><div class="stat-val" id="s-people">—</div><div class="stat-sub">unique names</div></div>
+      <div class="stat-card"><div class="stat-label">Registered Employees</div><div class="stat-val" id="s-employees">—</div><div class="stat-sub">with accounts</div></div>
       <div class="stat-card"><div class="stat-label">This Month</div><div class="stat-val" id="s-month">—</div><div class="stat-sub">completions</div></div>
       <div class="stat-card"><div class="stat-label">Today</div><div class="stat-val" id="s-today">—</div><div class="stat-sub">completions</div></div>
+    </div>
+
+    <!-- Expiring Soon -->
+    <div id="expiring-section" style="margin-bottom:28px;display:none">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:10px">
+        <div style="display:flex;align-items:center;gap:10px">
+          <span style="font-size:1.1rem">⚠️</span>
+          <span style="font-size:0.8em;font-weight:700;color:#f59e0b;letter-spacing:1px;text-transform:uppercase">Expiring Within 30 Days</span>
+          <span id="expiring-count" style="background:rgba(245,158,11,0.15);color:#f59e0b;border:1px solid rgba(245,158,11,0.4);border-radius:12px;padding:2px 10px;font-size:0.75em;font-weight:700"></span>
+        </div>
+        <button class="fbtn" id="remind-btn" onclick="sendReminders()" style="background:rgba(245,158,11,0.12);border:1px solid rgba(245,158,11,0.4);color:#f59e0b;font-size:0.82em">
+          📧 Send Email Reminders
+        </button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>Employee</th><th>Module</th><th>Lang</th><th>Expires</th><th>Days Left</th>
+          </tr></thead>
+          <tbody id="expiring-body"></tbody>
+        </table>
+      </div>
     </div>
 
     <!-- Filters -->
@@ -267,19 +289,57 @@ async function init() {
 async function showDashboard() {
   document.getElementById('login-screen').style.display = 'none';
   document.getElementById('dashboard').style.display = 'block';
-  await Promise.all([loadStats(), loadData()]);
+  await Promise.all([loadStats(), loadData(), loadExpiring()]);
 }
 
 // ── Stats ─────────────────────────────────────────────────────────────────────
 async function loadStats() {
   try {
-    const r   = await apiFetch('/api/admin/stats');
-    const st  = await r.json();
-    document.getElementById('s-total').textContent  = st.total;
-    document.getElementById('s-people').textContent = st.people;
-    document.getElementById('s-month').textContent  = st.thisMonth;
-    document.getElementById('s-today').textContent  = st.today;
+    const r  = await apiFetch('/api/admin/stats');
+    const st = await r.json();
+    document.getElementById('s-total').textContent     = st.total;
+    document.getElementById('s-employees').textContent = st.employees || '—';
+    document.getElementById('s-month').textContent     = st.thisMonth;
+    document.getElementById('s-today').textContent     = st.today;
   } catch(e) {}
+}
+
+// ── Expiring certifications ───────────────────────────────────────────────────
+async function loadExpiring() {
+  try {
+    const r    = await apiFetch('/api/admin/expiring');
+    const rows = await r.json();
+    if (!rows.length) return;
+    document.getElementById('expiring-section').style.display = '';
+    document.getElementById('expiring-count').textContent = rows.length + ' record' + (rows.length !== 1 ? 's' : '');
+    const daysColor = d => d < 0 ? 'var(--red)' : d <= 7 ? 'var(--red)' : 'var(--gold)';
+    document.getElementById('expiring-body').innerHTML = rows.map(r => `
+      <tr>
+        <td class="td-name">${esc(r.employee_name)}</td>
+        <td class="td-module">${esc(r.module_title)}</td>
+        <td><span class="lang-badge lang-${r.language}">${r.language==='en'?'🇺🇸 EN':'🇲🇽 ES'}</span></td>
+        <td class="td-date">${esc(r.expiry_date||'')}</td>
+        <td style="font-weight:700;color:${daysColor(r.days_left)}">${r.days_left < 0 ? 'Expired ' + Math.abs(r.days_left) + 'd ago' : r.days_left + ' days'}</td>
+      </tr>`).join('');
+  } catch(e) {}
+}
+
+async function sendReminders() {
+  const btn = document.getElementById('remind-btn');
+  btn.disabled = true;
+  btn.textContent = '⏳ Sending…';
+  try {
+    const r    = await apiFetch('/api/admin/send-reminders', 'POST');
+    const data = await r.json();
+    if (!r.ok) {
+      toast(data.error || 'Email not configured.', 'err');
+      if (data.setup) alert('Email Setup Required:\n\n' + data.setup);
+    } else {
+      toast(`✅ Sent reminders to ${data.sent} employee${data.sent!==1?'s':''}.`, 'ok');
+    }
+  } catch(e) { toast('Failed to send reminders.', 'err'); }
+  btn.disabled = false;
+  btn.textContent = '📧 Send Email Reminders';
 }
 
 // ── Data ──────────────────────────────────────────────────────────────────────

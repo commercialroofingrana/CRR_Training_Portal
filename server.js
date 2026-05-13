@@ -9,25 +9,45 @@ const PORT = process.env.PORT || 3000;
 const HOST = process.env.HOST || '0.0.0.0';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'CRR-Admin-2025';
 
+// ── Password utilities (built-in crypto, no extra deps) ───────────────────────
+function hashPassword(pw) {
+  const salt = crypto.randomBytes(16).toString('hex');
+  const hash = crypto.scryptSync(pw, salt, 64).toString('hex');
+  return salt + ':' + hash;
+}
+function verifyPassword(pw, stored) {
+  try {
+    const [salt, hash] = stored.split(':');
+    const h = crypto.scryptSync(pw, salt, 64).toString('hex');
+    return crypto.timingSafeEqual(Buffer.from(hash, 'hex'), Buffer.from(h, 'hex'));
+  } catch(e) { return false; }
+}
+
+// ── Optional email (nodemailer via Gmail, set EMAIL_USER + EMAIL_PASS env vars) ─
+let mailer = null;
+if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
+  try {
+    const nodemailer = require('nodemailer');
+    mailer = nodemailer.createTransport({
+      service: 'gmail',
+      auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS }
+    });
+    console.log('[CRR] Email notifications enabled:', process.env.EMAIL_USER);
+  } catch(e) { console.warn('[CRR] nodemailer not available:', e.message); }
+}
+
 // ── Database (PostgreSQL on Railway, SQLite locally) ──────────────────────────
-let query; // unified async query(sql, params) → rows[]
+let query;
 
 if (process.env.DATABASE_URL) {
-  // ── PostgreSQL ──
   const { Pool } = require('pg');
-  const pool = new Pool({
-    connectionString: process.env.DATABASE_URL,
-    ssl: { rejectUnauthorized: false }
-  });
+  const pool = new Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } });
   query = async (sql, params = []) => {
-    // Convert SQLite ? placeholders to PostgreSQL $1 $2 …
     let n = 0;
     const pgSql = sql.replace(/\?/g, () => `$${++n}`);
-    // Convert SQLite AUTOINCREMENT → SERIAL, strftime → to_char, date() → DATE()
     const { rows } = await pool.query(pgSql, params);
     return rows;
   };
-  // Init tables
   (async () => {
     await pool.query(`
       CREATE TABLE IF NOT EXISTS completions (
@@ -46,13 +66,26 @@ if (process.env.DATABASE_URL) {
         token      TEXT PRIMARY KEY,
         created_at TIMESTAMPTZ DEFAULT NOW()
       );
+      CREATE TABLE IF NOT EXISTS employees (
+        id            SERIAL PRIMARY KEY,
+        name          TEXT NOT NULL,
+        email         TEXT UNIQUE NOT NULL,
+        password_hash TEXT NOT NULL,
+        created_at    TIMESTAMPTZ DEFAULT NOW()
+      );
+      CREATE TABLE IF NOT EXISTS employee_sessions (
+        token       TEXT PRIMARY KEY,
+        employee_id INT REFERENCES employees(id) ON DELETE CASCADE,
+        created_at  TIMESTAMPTZ DEFAULT NOW()
+      );
     `);
+    // Add employee_id to completions if this is an existing DB
+    await pool.query(`ALTER TABLE completions ADD COLUMN IF NOT EXISTS employee_id INT REFERENCES employees(id)`);
     console.log('[CRR] PostgreSQL tables ready');
   })().catch(e => console.error('[CRR] DB init error:', e));
 
 } else {
-  // ── SQLite (local dev) ──
-  const Database = require('better-sqlite3'); // eslint-disable-line
+  const Database = require('better-sqlite3');
   const DB_PATH  = path.join(__dirname, 'data', 'training.db');
   fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
   const db = new Database(DB_PATH);
@@ -74,8 +107,21 @@ if (process.env.DATABASE_URL) {
       token      TEXT PRIMARY KEY,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
+    CREATE TABLE IF NOT EXISTS employees (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      name          TEXT NOT NULL,
+      email         TEXT UNIQUE NOT NULL,
+      password_hash TEXT NOT NULL,
+      created_at    DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE TABLE IF NOT EXISTS employee_sessions (
+      token       TEXT PRIMARY KEY,
+      employee_id INTEGER REFERENCES employees(id) ON DELETE CASCADE,
+      created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
   `);
-  // Wrap SQLite in async interface
+  // Add employee_id column to completions if it doesn't exist yet
+  try { db.exec('ALTER TABLE completions ADD COLUMN employee_id INTEGER REFERENCES employees(id)'); } catch(e) {}
   query = async (sql, params = []) => {
     const stmt = db.prepare(sql);
     if (/^\s*(insert|update|delete)/i.test(sql)) {
@@ -130,9 +176,8 @@ app.use(express.static(path.join(__dirname, 'public')));
 const INJECT_SCRIPT = `
 <script>
 (function(){
-  // Create hidden placeholder elements for any time-spent IDs that were removed
-  // from the HTML but are still referenced by submitAck in some training files.
-  // Without these, submitAck crashes on null.textContent and tracking never fires.
+  // Create hidden placeholder elements for removed time-spent IDs so
+  // submitAck doesn't crash trying to set them (which would block tracking).
   ['cert-time','pcert-time','ct','print-time'].forEach(function(id){
     if(!document.getElementById(id)){
       var d=document.createElement('div');
@@ -167,10 +212,13 @@ const INJECT_SCRIPT = `
       quizScore:       score,
       certificateHTML: certEl?certEl.outerHTML:''
     };
+    // Include employee token if the user is logged in (same origin = same localStorage)
+    var headers={'Content-Type':'application/json'};
+    try{var et=localStorage.getItem('crr_employee_token');if(et) headers['x-employee-token']=et;}catch(e){}
     console.log('[CRR] Sending completion:', payload.moduleTitle, payload.employeeName);
     fetch('/api/complete',{
       method:'POST',
-      headers:{'Content-Type':'application/json'},
+      headers:headers,
       body:JSON.stringify(payload)
     })
     .then(function(r){return r.json();})
@@ -219,17 +267,106 @@ app.post('/api/complete', async (req, res) => {
     console.log('[CRR] /api/complete:', { employeeName, moduleId, moduleTitle, language });
     if (!moduleTitle) return res.status(400).json({ error: 'Missing moduleTitle' });
     const name = (employeeName || '').trim() || 'Unknown';
+
+    // Link to logged-in employee if token provided
+    let employeeId = null;
+    const empToken = req.headers['x-employee-token'] || '';
+    if (empToken) {
+      const empRows = await query('SELECT employee_id FROM employee_sessions WHERE token=?', [empToken]);
+      if (empRows.length) employeeId = empRows[0].employee_id;
+    }
+
     const rows = await query(
-      `INSERT INTO completions (employee_name,module_id,module_title,language,date_completed,quiz_score,certificate_html) VALUES (?,?,?,?,?,?,?)`,
-      [name, moduleId||'', moduleTitle, language||'en', dateCompleted||'', quizScore||'', certificateHTML||'']
+      `INSERT INTO completions (employee_name,module_id,module_title,language,date_completed,quiz_score,certificate_html,employee_id) VALUES (?,?,?,?,?,?,?,?)`,
+      [name, moduleId||'', moduleTitle, language||'en', dateCompleted||'', quizScore||'', certificateHTML||'', employeeId]
     );
     const id = rows[0]?.id || rows[0]?.lastInsertRowid || 0;
-    console.log('[CRR] Saved completion id:', id, 'for', name);
+    console.log('[CRR] Saved completion id:', id, 'for', name, employeeId ? `(employee ${employeeId})` : '(anonymous)');
     res.json({ success: true, id });
   } catch(e) {
     console.error('[CRR] /api/complete error:', e.message);
     res.status(500).json({ error: e.message });
   }
+});
+
+// ── Employee auth ─────────────────────────────────────────────────────────────
+app.post('/api/auth/register', async (req, res) => {
+  try {
+    const { name, email, password } = req.body;
+    if (!name || !email || !password) return res.status(400).json({ error: 'Name, email and password are required.' });
+    if (password.length < 6) return res.status(400).json({ error: 'Password must be at least 6 characters.' });
+    const existing = await query('SELECT id FROM employees WHERE email=?', [email.toLowerCase().trim()]);
+    if (existing.length) return res.status(409).json({ error: 'That email is already registered. Please sign in.' });
+    const hash = hashPassword(password);
+    const rows = await query(
+      'INSERT INTO employees (name,email,password_hash) VALUES (?,?,?)',
+      [name.trim(), email.toLowerCase().trim(), hash]
+    );
+    const employeeId = rows[0]?.id || rows[0]?.lastInsertRowid;
+    const token = crypto.randomBytes(32).toString('hex');
+    await query('INSERT INTO employee_sessions (token,employee_id) VALUES (?,?)', [token, employeeId]);
+    res.json({ token, name: name.trim(), email: email.toLowerCase().trim() });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/auth/login', async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    if (!email || !password) return res.status(400).json({ error: 'Email and password are required.' });
+    const rows = await query('SELECT * FROM employees WHERE email=?', [email.toLowerCase().trim()]);
+    if (!rows.length || !verifyPassword(password, rows[0].password_hash)) {
+      return res.status(401).json({ error: 'Invalid email or password.' });
+    }
+    const token = crypto.randomBytes(32).toString('hex');
+    await query('INSERT INTO employee_sessions (token,employee_id) VALUES (?,?)', [token, rows[0].id]);
+    res.json({ token, name: rows[0].name, email: rows[0].email });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+async function employeeAuth(req, res, next) {
+  const token = req.headers['x-employee-token'] || req.query.et || '';
+  if (!token) return res.status(401).json({ error: 'Unauthorized' });
+  const rows = await query(
+    'SELECT e.id,e.name,e.email FROM employees e JOIN employee_sessions es ON e.id=es.employee_id WHERE es.token=?',
+    [token]
+  );
+  if (!rows.length) return res.status(401).json({ error: 'Invalid token' });
+  req.employee = rows[0];
+  next();
+}
+
+app.get('/api/auth/me', employeeAuth, (req, res) => {
+  res.json({ id: req.employee.id, name: req.employee.name, email: req.employee.email });
+});
+
+app.post('/api/auth/logout', employeeAuth, async (req, res) => {
+  const token = req.headers['x-employee-token'] || '';
+  await query('DELETE FROM employee_sessions WHERE token=?', [token]);
+  res.json({ success: true });
+});
+
+// ── Employee: own completions with expiry ─────────────────────────────────────
+app.get('/api/employee/completions', employeeAuth, async (req, res) => {
+  try {
+    const rows = await query(
+      'SELECT id,module_id,module_title,language,date_completed,quiz_score,created_at FROM completions WHERE employee_id=? ORDER BY created_at DESC',
+      [req.employee.id]
+    );
+    const now = Date.now();
+    const YEAR_MS = 365 * 24 * 60 * 60 * 1000;
+    const result = rows.map(r => {
+      const completedAt = new Date(r.created_at).getTime();
+      const expiryAt    = completedAt + YEAR_MS;
+      const daysLeft    = Math.ceil((expiryAt - now) / (24 * 60 * 60 * 1000));
+      return {
+        ...r,
+        expiry_date: new Date(expiryAt).toISOString().split('T')[0],
+        days_left:   daysLeft,
+        status:      daysLeft < 0 ? 'expired' : daysLeft <= 30 ? 'expiring_soon' : 'active'
+      };
+    });
+    res.json(result);
+  } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
 // ── Admin auth ────────────────────────────────────────────────────────────────
@@ -277,14 +414,110 @@ app.get('/api/admin/stats', adminAuth, async (req, res) => {
     const [r4] = isPg
       ? await query(`SELECT COUNT(*) AS c FROM completions WHERE created_at >= CURRENT_DATE`)
       : await query("SELECT COUNT(*) AS c FROM completions WHERE date(created_at)=date('now')");
+    const [r5] = await query('SELECT COUNT(*) AS c FROM employees');
     const topModules = await query('SELECT module_title, COUNT(*) AS c FROM completions GROUP BY module_title ORDER BY c DESC LIMIT 5');
     res.json({
-      total:     Number(r1.c),
-      people:    Number(r2.c),
-      thisMonth: Number(r3.c),
-      today:     Number(r4.c),
+      total:      Number(r1.c),
+      people:     Number(r2.c),
+      thisMonth:  Number(r3.c),
+      today:      Number(r4.c),
+      employees:  Number(r5.c),
       topModules: topModules.map(r => ({ module_title: r.module_title, c: Number(r.c) }))
     });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── Admin: expiring certifications ────────────────────────────────────────────
+app.get('/api/admin/expiring', adminAuth, async (req, res) => {
+  try {
+    const isPg = !!process.env.DATABASE_URL;
+    const days = Number(req.query.days || 30);
+    let rows;
+    if (isPg) {
+      rows = await query(`
+        SELECT DISTINCT ON (employee_name, module_id)
+               id, employee_name, module_id, module_title, language, created_at,
+               (created_at + INTERVAL '1 year')::DATE AS expiry_date,
+               CEIL(EXTRACT(EPOCH FROM ((created_at + INTERVAL '1 year') - NOW())) / 86400)::INT AS days_left
+        FROM completions
+        WHERE (created_at + INTERVAL '1 year') BETWEEN NOW() - INTERVAL '7 days' AND NOW() + '${days} days'::INTERVAL
+        ORDER BY employee_name, module_id, created_at DESC
+      `);
+    } else {
+      rows = await query(`
+        SELECT id, employee_name, module_id, module_title, language, created_at,
+               date(created_at,'+1 year') AS expiry_date,
+               CAST(julianday(date(created_at,'+1 year')) - julianday('now') AS INTEGER) AS days_left
+        FROM completions
+        WHERE date(created_at,'+1 year') BETWEEN date('now','-7 days') AND date('now','+${days} days')
+        ORDER BY expiry_date ASC
+      `);
+    }
+    res.json(rows.map(r => ({ ...r, days_left: Number(r.days_left) })));
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── Admin: employees list ─────────────────────────────────────────────────────
+app.get('/api/admin/employees', adminAuth, async (req, res) => {
+  try {
+    const emps = await query('SELECT id,name,email,created_at FROM employees ORDER BY name');
+    const counts = await query('SELECT employee_id, COUNT(*) AS c FROM completions WHERE employee_id IS NOT NULL GROUP BY employee_id');
+    const countMap = Object.fromEntries(counts.map(r => [r.employee_id, Number(r.c)]));
+    res.json(emps.map(e => ({ ...e, completion_count: countMap[e.id] || 0 })));
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── Admin: send expiry email reminders ───────────────────────────────────────
+app.post('/api/admin/send-reminders', adminAuth, async (req, res) => {
+  if (!mailer) {
+    return res.status(503).json({
+      error: 'Email not configured.',
+      setup: 'In Railway → Variables, add EMAIL_USER (your Gmail address) and EMAIL_PASS (Gmail App Password). See: myaccount.google.com/apppasswords'
+    });
+  }
+  try {
+    const isPg = !!process.env.DATABASE_URL;
+    let rows;
+    if (isPg) {
+      rows = await query(`
+        SELECT DISTINCT ON (e.email, c.module_id)
+               e.name, e.email, c.module_title,
+               (c.created_at + INTERVAL '1 year')::DATE AS expiry_date,
+               CEIL(EXTRACT(EPOCH FROM ((c.created_at + INTERVAL '1 year') - NOW())) / 86400)::INT AS days_left
+        FROM completions c JOIN employees e ON c.employee_id = e.id
+        WHERE (c.created_at + INTERVAL '1 year') BETWEEN NOW() AND NOW() + INTERVAL '30 days'
+        ORDER BY e.email, c.module_id, c.created_at DESC
+      `);
+    } else {
+      rows = await query(`
+        SELECT e.name, e.email, c.module_title,
+               date(c.created_at,'+1 year') AS expiry_date,
+               CAST(julianday(date(c.created_at,'+1 year')) - julianday('now') AS INTEGER) AS days_left
+        FROM completions c JOIN employees e ON c.employee_id = e.id
+        WHERE date(c.created_at,'+1 year') BETWEEN date('now') AND date('now','+30 days')
+        ORDER BY e.email, expiry_date ASC
+      `);
+    }
+    // Group by employee email
+    const byEmail = {};
+    for (const r of rows) {
+      if (!byEmail[r.email]) byEmail[r.email] = { name: r.name, modules: [] };
+      byEmail[r.email].modules.push({ title: r.module_title, expiry: r.expiry_date, days: Number(r.days_left) });
+    }
+    let sent = 0;
+    for (const [email, data] of Object.entries(byEmail)) {
+      const moduleList = data.modules
+        .map(m => `  • ${m.title} — expires ${m.expiry} (${m.days} days)`)
+        .join('\n');
+      await mailer.sendMail({
+        from: `"CRR Safety Training" <${process.env.EMAIL_USER}>`,
+        to: email,
+        subject: 'Action Required: Safety Training Expiring Soon',
+        text: `Hi ${data.name},\n\nThe following safety trainings are expiring within 30 days and need to be renewed:\n\n${moduleList}\n\nPlease log in to the CRR Safety Training Portal to complete your renewals.\n\nCommercial Roofing Rana LLC — Safety Department`
+      });
+      sent++;
+    }
+    res.json({ success: true, sent, total: rows.length });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -302,6 +535,14 @@ app.get('/api/admin/certificate/:id', adminAuth, async (req, res) => {
 app.delete('/api/admin/completions/:id', adminAuth, async (req, res) => {
   try {
     await query('DELETE FROM completions WHERE id=?', [req.params.id]);
+    res.json({ success: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── Admin: delete employee ────────────────────────────────────────────────────
+app.delete('/api/admin/employees/:id', adminAuth, async (req, res) => {
+  try {
+    await query('DELETE FROM employees WHERE id=?', [req.params.id]);
     res.json({ success: true });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
@@ -350,10 +591,6 @@ body{font-family:'Segoe UI',Arial,sans-serif;background:#1a1208;color:#e8e8e8;mi
 .cert-meta-val,.cmtv{font-size:0.9em;color:#c0b070;font-weight:600}
 .cert-badges,.cbg{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin:18px 0}
 .cert-badge,.cbg2{background:rgba(201,162,39,0.12);border:1px solid rgba(201,162,39,0.4);color:#c9a227;border-radius:20px;padding:5px 13px;font-size:0.72em;font-weight:600}
-.cert-footer,.cf{display:flex;justify-content:space-between;align-items:flex-end;margin-top:20px;padding-top:14px;border-top:1px solid rgba(201,162,39,0.2)}
-.cert-sig-line{text-align:center}
-.cert-sig-name{font-size:0.8em;font-weight:700;color:#c9a227;letter-spacing:1px}
-.cert-sig-title{font-size:0.7em;color:#666}
 @media print{.toolbar{display:none}body{background:#fff}.cert-wrap{padding:20px;min-height:auto}#certificate,#cert{border-color:#c9a227!important}}
 </style></head><body>
 <div class="toolbar">

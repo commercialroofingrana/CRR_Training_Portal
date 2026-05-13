@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>My Training Record — CRR Safety Training</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{--gold:#c9a227;--gold2:#f5c842;--bg:#0a0a0a;--card:#141414;--card2:#1a1a1a;--border:#222;--border2:#2a2a2a;--text:#e8e8e8;--muted:#777;--green:#10b981;--yellow:#f59e0b;--red:#ef4444}
+body{font-family:'Segoe UI',system-ui,Arial,sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
+
+header{background:#0e0e0e;border-bottom:1px solid #1e1e1e;padding:0 24px;display:flex;align-items:center;gap:14px;height:62px;position:sticky;top:0;z-index:100}
+.hlogo{font-size:1.4rem;font-weight:900;background:linear-gradient(135deg,var(--gold),var(--gold2));-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.hsub{font-size:0.75em;color:var(--muted);text-transform:uppercase;letter-spacing:1px}
+.hsp{flex:1}
+.hname{font-size:0.88em;color:#ccc;font-weight:600}
+.hbtn{padding:8px 16px;border-radius:8px;font-size:0.82em;font-weight:600;cursor:pointer;border:1px solid var(--border2);background:transparent;color:var(--muted);transition:all 0.15s}
+.hbtn:hover{border-color:var(--gold);color:var(--gold)}
+.hbtn.red:hover{border-color:var(--red);color:var(--red)}
+
+main{max-width:1100px;margin:0 auto;padding:32px 24px}
+
+/* ── Summary bar ── */
+.summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:14px;margin-bottom:32px}
+.sum-card{background:var(--card);border:1px solid var(--border2);border-radius:12px;padding:18px 20px;text-align:center}
+.sum-val{font-size:2rem;font-weight:800}
+.sum-val.gold{color:var(--gold)}
+.sum-val.green{color:var(--green)}
+.sum-val.yellow{color:var(--yellow)}
+.sum-val.red{color:var(--red)}
+.sum-lbl{font-size:0.72em;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-top:5px}
+
+/* ── Alert banner ── */
+.alert-banner{background:rgba(245,158,11,0.1);border:1px solid rgba(245,158,11,0.35);border-radius:10px;padding:14px 18px;margin-bottom:24px;display:none;align-items:center;gap:12px}
+.alert-banner.show{display:flex}
+.alert-icon{font-size:1.4rem}
+.alert-text{font-size:0.88em;color:#f59e0b;line-height:1.5}
+.alert-text strong{color:var(--gold2)}
+
+/* ── Section heading ── */
+.sec-head{display:flex;align-items:center;gap:10px;margin-bottom:16px;margin-top:28px}
+.sec-title{font-size:0.78em;font-weight:700;color:var(--muted);letter-spacing:2px;text-transform:uppercase}
+.sec-head::after{content:'';flex:1;height:1px;background:var(--border)}
+
+/* ── Module grid ── */
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:14px}
+.mod-card{background:var(--card);border:1px solid var(--border2);border-radius:13px;overflow:hidden;transition:transform 0.15s,border-color 0.15s}
+.mod-card:hover{transform:translateY(-2px);border-color:#333}
+.mod-top{height:4px}
+.mod-body{padding:16px 16px 14px}
+.mod-icon{font-size:1.8rem;margin-bottom:8px}
+.mod-title{font-size:0.88em;font-weight:700;color:var(--text);line-height:1.4;margin-bottom:10px}
+
+/* status pill */
+.status-pill{display:inline-flex;align-items:center;gap:5px;border-radius:20px;padding:4px 10px;font-size:0.72em;font-weight:700;letter-spacing:0.3px;margin-bottom:8px}
+.pill-active{background:rgba(16,185,129,0.15);color:var(--green);border:1px solid rgba(16,185,129,0.35)}
+.pill-expiring{background:rgba(245,158,11,0.15);color:var(--yellow);border:1px solid rgba(245,158,11,0.35)}
+.pill-expired{background:rgba(239,68,68,0.12);color:var(--red);border:1px solid rgba(239,68,68,0.25)}
+.pill-none{background:#1e1e1e;color:#555;border:1px solid #2a2a2a}
+
+.mod-meta{font-size:0.75em;color:var(--muted);line-height:1.6;margin-bottom:10px;min-height:2.4em}
+.mod-btn{width:100%;padding:8px;border-radius:7px;border:none;font-size:0.82em;font-weight:700;cursor:pointer;transition:opacity 0.2s}
+.mod-btn.go{background:linear-gradient(135deg,var(--gold),var(--gold2));color:#111}
+.mod-btn.retake{background:rgba(16,185,129,0.15);border:1px solid var(--green);color:var(--green)}
+.mod-btn.renew{background:rgba(245,158,11,0.15);border:1px solid var(--yellow);color:var(--yellow)}
+.mod-btn.expired-btn{background:rgba(239,68,68,0.12);border:1px solid var(--red);color:var(--red)}
+
+/* loading */
+.spinner{width:36px;height:36px;border:3px solid var(--border2);border-top-color:var(--gold);border-radius:50%;animation:spin 0.8s linear infinite;margin:60px auto}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* overlay */
+#overlay{display:none;position:fixed;inset:0;background:#000;z-index:1000;flex-direction:column}
+#overlay.open{display:flex}
+#obar{background:#0e0e0e;border-bottom:1px solid #222;display:flex;align-items:center;padding:0 16px;height:48px;gap:12px;flex-shrink:0}
+#otitle{flex:1;font-size:0.9em;font-weight:600;color:#ccc;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#oclose{background:#1a1a1a;border:1px solid #333;color:#ccc;padding:7px 16px;border-radius:7px;font-size:0.85em;font-weight:600;cursor:pointer}
+#oclose:hover{background:var(--red);border-color:var(--red);color:#fff}
+#tframe{flex:1;width:100%;border:none;background:#0d0d0d}
+
+#toast{position:fixed;bottom:28px;left:50%;transform:translateX(-50%) translateY(80px);background:var(--green);color:#fff;padding:13px 26px;border-radius:11px;font-weight:700;font-size:0.9em;box-shadow:0 8px 24px rgba(16,185,129,0.35);transition:transform 0.4s cubic-bezier(0.34,1.56,0.64,1);z-index:2000;white-space:nowrap}
+#toast.show{transform:translateX(-50%) translateY(0)}
+
+footer{text-align:center;padding:28px;color:var(--muted);font-size:0.8em;border-top:1px solid var(--border);margin-top:32px}
+footer span{color:var(--gold)}
+
+@media(max-width:600px){main{padding:20px 14px}header{padding:0 14px}.hsub{display:none}}
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <div class="hlogo">CRR</div>
+    <div class="hsub">Safety Training Portal</div>
+  </div>
+  <div class="hsp"></div>
+  <span class="hname" id="h-name"></span>
+  <button class="hbtn" onclick="location.href='/'">← Portal</button>
+  <button class="hbtn red" onclick="doLogout()">Sign Out</button>
+</header>
+
+<main>
+  <div id="loading"><div class="spinner"></div></div>
+  <div id="content" style="display:none">
+    <!-- Summary -->
+    <div class="summary">
+      <div class="sum-card"><div class="sum-val green" id="s-done">0</div><div class="sum-lbl">Completed</div></div>
+      <div class="sum-card"><div class="sum-val gold"  id="s-total">0</div><div class="sum-lbl">Total Courses</div></div>
+      <div class="sum-card"><div class="sum-val yellow" id="s-expiring">0</div><div class="sum-lbl">Expiring Soon</div></div>
+      <div class="sum-card"><div class="sum-val red" id="s-expired">0</div><div class="sum-lbl">Expired</div></div>
+    </div>
+
+    <!-- Alert -->
+    <div class="alert-banner" id="alert-banner">
+      <div class="alert-icon">⚠️</div>
+      <div class="alert-text" id="alert-text"></div>
+    </div>
+
+    <!-- Needs Attention -->
+    <div id="attention-section" style="display:none">
+      <div class="sec-head"><div class="sec-title">Needs Attention</div></div>
+      <div class="grid" id="attention-grid"></div>
+    </div>
+
+    <!-- English Courses -->
+    <div class="sec-head" style="margin-top:32px"><div class="sec-title">English Courses</div></div>
+    <div class="grid" id="grid-en"></div>
+
+    <!-- Spanish Courses -->
+    <div class="sec-head" style="margin-top:32px"><div class="sec-title">Cursos en Español</div></div>
+    <div class="grid" id="grid-es"></div>
+  </div>
+</main>
+
+<!-- Training Overlay -->
+<div id="overlay">
+  <div id="obar">
+    <span>🎓</span>
+    <span id="otitle">Loading…</span>
+    <button id="oclose" onclick="closeTraining()">✕ Close</button>
+  </div>
+  <iframe id="tframe" src="about:blank" title="Safety Training Module"></iframe>
+</div>
+
+<div id="toast">✅ Training complete! Record saved.</div>
+
+<footer><span>Commercial Roofing Rana LLC</span> · Your Personal Training Record</footer>
+
+<script>
+const TOKEN = localStorage.getItem('crr_employee_token') || '';
+const NAME  = localStorage.getItem('crr_employee_name')  || '';
+
+// Redirect to login if not authenticated
+if (!TOKEN) {
+  sessionStorage.setItem('crr_login_redirect', '/dashboard.html');
+  location.href = '/login.html';
+}
+
+document.getElementById('h-name').textContent = NAME ? '👤 ' + NAME : '';
+
+let allModules = [];
+let completionMap = {}; // module_id → completion record (most recent)
+
+async function doLogout() {
+  try { await fetch('/api/auth/logout', { method:'POST', headers:{'x-employee-token':TOKEN} }); } catch(e){}
+  ['crr_employee_token','crr_employee_name','crr_employee_email'].forEach(k => localStorage.removeItem(k));
+  location.href = '/';
+}
+
+function statusPill(status, daysLeft) {
+  if (status === 'active')        return `<span class="status-pill pill-active">✓ Current</span>`;
+  if (status === 'expiring_soon') return `<span class="status-pill pill-expiring">⚠ Expires in ${daysLeft} day${daysLeft!==1?'s':''}</span>`;
+  if (status === 'expired')       return `<span class="status-pill pill-expired">✗ Expired</span>`;
+  return `<span class="status-pill pill-none">Not started</span>`;
+}
+
+function metaText(comp) {
+  if (!comp) return '<span style="color:#444">Start this training to earn your certificate.</span>';
+  const lines = [];
+  if (comp.date_completed) lines.push(`Completed: ${comp.date_completed}`);
+  if (comp.expiry_date)    lines.push(`Expires: ${comp.expiry_date}`);
+  if (comp.quiz_score)     lines.push(`Score: ${comp.quiz_score}`);
+  return lines.join(' &nbsp;·&nbsp; ') || '&nbsp;';
+}
+
+function actionBtn(modId, status) {
+  if (!completionMap[modId])      return `<button class="mod-btn go" onclick="startTraining('${modId}')">▶ Start Training</button>`;
+  if (status === 'active')        return `<button class="mod-btn retake" onclick="startTraining('${modId}')">↺ Retake</button>`;
+  if (status === 'expiring_soon') return `<button class="mod-btn renew" onclick="startTraining('${modId}')">🔄 Renew Now</button>`;
+  if (status === 'expired')       return `<button class="mod-btn expired-btn" onclick="startTraining('${modId}')">⚠ Renew Required</button>`;
+  return `<button class="mod-btn go" onclick="startTraining('${modId}')">▶ Start Training</button>`;
+}
+
+function renderCard(mod) {
+  const comp   = completionMap[mod.id];
+  const status = comp ? comp.status : 'none';
+  const days   = comp ? comp.days_left : null;
+  return `
+  <div class="mod-card">
+    <div class="mod-top" style="background:${mod.color}"></div>
+    <div class="mod-body">
+      <div class="mod-icon">${mod.icon}</div>
+      <div class="mod-title">${esc(mod.title)}</div>
+      ${statusPill(status, days)}
+      <div class="mod-meta">${metaText(comp)}</div>
+      ${actionBtn(mod.id, status)}
+    </div>
+  </div>`;
+}
+
+function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+async function load() {
+  try {
+    const [modsRes, compRes] = await Promise.all([
+      fetch('/api/modules'),
+      fetch('/api/employee/completions', { headers: {'x-employee-token': TOKEN} })
+    ]);
+    if (compRes.status === 401) { doLogout(); return; }
+    allModules = await modsRes.json();
+    const completions = await compRes.json();
+
+    // Build map: module_id → most recent completion
+    completionMap = {};
+    for (const c of completions) {
+      if (!completionMap[c.module_id] || c.created_at > completionMap[c.module_id].created_at) {
+        completionMap[c.module_id] = c;
+      }
+    }
+
+    render();
+  } catch(e) {
+    document.getElementById('loading').innerHTML = '<p style="text-align:center;color:#ef4444;padding:40px">Failed to load. Please refresh.</p>';
+  }
+}
+
+function render() {
+  const enMods = allModules.filter(m => m.lang === 'en');
+  const esMods = allModules.filter(m => m.lang === 'es');
+
+  // Stats
+  const allDone     = Object.values(completionMap);
+  const expiring    = allDone.filter(c => c.status === 'expiring_soon');
+  const expired     = allDone.filter(c => c.status === 'expired');
+  const uniqueDone  = new Set(Object.keys(completionMap)).size;
+
+  document.getElementById('s-done').textContent     = uniqueDone;
+  document.getElementById('s-total').textContent    = enMods.length; // 14 EN courses
+  document.getElementById('s-expiring').textContent = expiring.length;
+  document.getElementById('s-expired').textContent  = expired.length;
+
+  // Alert
+  const urgent = [...expiring, ...expired];
+  if (urgent.length) {
+    const banner = document.getElementById('alert-banner');
+    banner.classList.add('show');
+    const names = urgent.slice(0,3).map(c => {
+      const m = allModules.find(x => x.id === c.module_id);
+      return m ? m.title : c.module_title;
+    });
+    const extra = urgent.length > 3 ? ` and ${urgent.length-3} more` : '';
+    document.getElementById('alert-text').innerHTML =
+      `<strong>Action required:</strong> ${names.join(', ')}${extra} need${urgent.length===1?'s':''} to be renewed to stay compliant.`;
+  }
+
+  // Needs attention section
+  const attentionMods = allModules.filter(m => {
+    const c = completionMap[m.id];
+    return c && (c.status === 'expiring_soon' || c.status === 'expired');
+  });
+  if (attentionMods.length) {
+    document.getElementById('attention-section').style.display = '';
+    document.getElementById('attention-grid').innerHTML = attentionMods.map(renderCard).join('');
+  }
+
+  // Main grids
+  document.getElementById('grid-en').innerHTML = enMods.map(renderCard).join('');
+  document.getElementById('grid-es').innerHTML = esMods.map(renderCard).join('');
+
+  document.getElementById('loading').style.display  = 'none';
+  document.getElementById('content').style.display  = '';
+}
+
+function startTraining(moduleId) {
+  const mod = allModules.find(m => m.id === moduleId);
+  document.getElementById('otitle').textContent = mod ? mod.title : moduleId;
+  document.getElementById('tframe').src = `/training/${moduleId}`;
+  document.getElementById('overlay').classList.add('open');
+  document.body.style.overflow = 'hidden';
+}
+
+function closeTraining() {
+  document.getElementById('tframe').src = 'about:blank';
+  document.getElementById('overlay').classList.remove('open');
+  document.body.style.overflow = '';
+  load(); // reload to reflect new completions
+}
+
+window.addEventListener('message', function(e) {
+  if (!e.data || e.data.type !== 'trainingComplete') return;
+  const name = e.data.payload?.employeeName || NAME || 'you';
+  document.getElementById('toast').textContent = `✅ Training complete! Certificate saved for ${name}.`;
+  document.getElementById('toast').classList.add('show');
+  setTimeout(() => document.getElementById('toast').classList.remove('show'), 5000);
+  setTimeout(() => {
+    if (document.getElementById('overlay').classList.contains('open')) closeTraining();
+  }, 3000);
+});
+
+load();
+</script>
+</body>
+</html>

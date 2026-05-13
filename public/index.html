@@ -84,6 +84,7 @@ footer span{color:var(--gold)}
     <button class="lang-btn active" id="btn-en" onclick="setLang('en')">🇺🇸 English</button>
     <button class="lang-btn" id="btn-es" onclick="setLang('es')">🇲🇽 Español</button>
   </div>
+  <button class="admin-link" id="emp-btn" onclick="empBtnClick()">👤 Sign In</button>
   <button class="admin-link" onclick="location.href='/admin.html'">⚙️ Admin</button>
 </header>
 
@@ -223,6 +224,26 @@ function showToast(msg) {
   t.classList.add('show');
   setTimeout(() => t.classList.remove('show'), 5000);
 }
+
+// ── Employee login state ──────────────────────────────────────────────────────
+function empBtnClick() {
+  const token = localStorage.getItem('crr_employee_token');
+  location.href = token ? '/dashboard.html' : '/login.html';
+}
+
+(function checkEmpLogin() {
+  const token = localStorage.getItem('crr_employee_token');
+  const name  = localStorage.getItem('crr_employee_name');
+  const btn   = document.getElementById('emp-btn');
+  if (token && name) {
+    btn.textContent = '👤 ' + name.split(' ')[0];
+    btn.title = 'View my training record';
+    // Verify token is still valid
+    fetch('/api/auth/me', { headers: {'x-employee-token': token} })
+      .then(r => { if (!r.ok) { localStorage.removeItem('crr_employee_token'); localStorage.removeItem('crr_employee_name'); btn.textContent = '👤 Sign In'; } })
+      .catch(() => {});
+  }
+})();
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 loadModules();
