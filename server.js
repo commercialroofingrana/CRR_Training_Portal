@@ -52,7 +52,7 @@ if (process.env.DATABASE_URL) {
 
 } else {
   // ── SQLite (local dev) ──
-  const Database = require('better-sqlite3');
+  const Database = require('better-sqlite3'); // eslint-disable-line
   const DB_PATH  = path.join(__dirname, 'data', 'training.db');
   fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
   const db = new Database(DB_PATH);
