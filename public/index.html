@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CRR Safety Training Portal</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{--gold:#c9a227;--gold2:#f5c842;--bg:#0a0a0a;--card:#141414;--border:#222;--text:#e8e8e8;--muted:#888}
+body{font-family:'Segoe UI',system-ui,Arial,sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
+a{color:inherit;text-decoration:none}
+
+/* ── Header ── */
+header{background:#0e0e0e;border-bottom:1px solid #1e1e1e;padding:0 24px;display:flex;align-items:center;gap:16px;height:64px;position:sticky;top:0;z-index:100}
+.header-logo{font-size:1.4rem;font-weight:900;background:linear-gradient(135deg,var(--gold),var(--gold2));-webkit-background-clip:text;-webkit-text-fill-color:transparent;white-space:nowrap}
+.header-sub{font-size:0.78em;color:var(--muted);letter-spacing:1px;text-transform:uppercase}
+.header-spacer{flex:1}
+.lang-toggle{display:flex;background:#1a1a1a;border:1px solid var(--border);border-radius:10px;overflow:hidden}
+.lang-btn{padding:8px 20px;font-size:0.9em;font-weight:700;cursor:pointer;border:none;background:transparent;color:var(--muted);transition:all 0.2s;letter-spacing:0.5px}
+.lang-btn.active{background:linear-gradient(135deg,var(--gold),var(--gold2));color:#111}
+.admin-link{padding:8px 16px;border:1px solid #333;border-radius:8px;font-size:0.8em;color:var(--muted);cursor:pointer;background:transparent;transition:all 0.2s}
+.admin-link:hover{border-color:var(--gold);color:var(--gold)}
+
+/* ── Hero ── */
+.hero{text-align:center;padding:52px 24px 36px;background:radial-gradient(ellipse at 50% 0%,rgba(201,162,39,0.08) 0%,transparent 70%);border-bottom:1px solid var(--border)}
+.hero-title{font-size:2.6rem;font-weight:900;background:linear-gradient(135deg,var(--gold),var(--gold2));-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:10px}
+.hero-sub{color:var(--muted);font-size:1em;max-width:500px;margin:0 auto 24px;line-height:1.6}
+.hero-stats{display:flex;gap:32px;justify-content:center;flex-wrap:wrap}
+.stat{text-align:center}
+.stat-num{font-size:2rem;font-weight:800;color:var(--gold)}
+.stat-label{font-size:0.75em;color:var(--muted);text-transform:uppercase;letter-spacing:1px}
+
+/* ── Course Grid ── */
+.section{padding:32px 24px}
+.section-title{font-size:0.8em;font-weight:700;color:var(--muted);letter-spacing:2px;text-transform:uppercase;margin-bottom:20px;display:flex;align-items:center;gap:10px}
+.section-title::after{content:'';flex:1;height:1px;background:var(--border)}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:16px;max-width:1200px;margin:0 auto}
+.card{background:var(--card);border:1px solid var(--border);border-radius:14px;overflow:hidden;cursor:pointer;transition:transform 0.18s,border-color 0.18s,box-shadow 0.18s;position:relative}
+.card:hover{transform:translateY(-3px);border-color:#333;box-shadow:0 8px 32px rgba(0,0,0,0.5)}
+.card-top{height:5px}
+.card-body{padding:20px 18px}
+.card-icon{font-size:2.2rem;margin-bottom:10px;display:block}
+.card-title{font-size:0.95em;font-weight:700;color:var(--text);line-height:1.4;margin-bottom:14px}
+.card-btn{width:100%;padding:9px;border-radius:8px;border:none;font-size:0.85em;font-weight:700;cursor:pointer;transition:opacity 0.2s}
+.card-btn.start{background:linear-gradient(135deg,var(--gold),var(--gold2));color:#111}
+.card-btn.done{background:rgba(16,185,129,0.15);border:1px solid #10b981;color:#10b981}
+.card-done-badge{position:absolute;top:12px;right:12px;background:#10b981;color:#fff;border-radius:20px;padding:3px 9px;font-size:0.68em;font-weight:700;letter-spacing:0.5px}
+
+/* ── Training Overlay ── */
+#overlay{display:none;position:fixed;inset:0;background:#000;z-index:1000;flex-direction:column}
+#overlay.open{display:flex}
+#overlay-bar{background:#0e0e0e;border-bottom:1px solid #222;display:flex;align-items:center;padding:0 16px;height:48px;gap:12px;flex-shrink:0}
+#overlay-title{flex:1;font-size:0.9em;font-weight:600;color:#ccc;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#overlay-close{background:#1a1a1a;border:1px solid #333;color:#ccc;padding:7px 16px;border-radius:7px;font-size:0.85em;font-weight:600;cursor:pointer;transition:all 0.15s}
+#overlay-close:hover{background:#dc2626;border-color:#dc2626;color:#fff}
+#training-frame{flex:1;width:100%;border:none;background:#0d0d0d}
+
+/* ── Completion Toast ── */
+#toast{position:fixed;bottom:28px;left:50%;transform:translateX(-50%) translateY(80px);background:linear-gradient(135deg,#10b981,#059669);color:#fff;padding:14px 28px;border-radius:12px;font-weight:700;font-size:0.95em;box-shadow:0 8px 32px rgba(16,185,129,0.4);transition:transform 0.4s cubic-bezier(0.34,1.56,0.64,1);z-index:2000;white-space:nowrap}
+#toast.show{transform:translateX(-50%) translateY(0)}
+
+/* ── Footer ── */
+footer{text-align:center;padding:28px;color:var(--muted);font-size:0.8em;border-top:1px solid var(--border);margin-top:20px}
+footer span{color:var(--gold)}
+
+/* ── Responsive ── */
+@media(max-width:600px){
+  .hero-title{font-size:1.8rem}
+  header{padding:0 14px}
+  .header-sub{display:none}
+  .section{padding:24px 14px}
+}
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <div class="header-logo">CRR</div>
+    <div class="header-sub">Safety Training Portal</div>
+  </div>
+  <div class="header-spacer"></div>
+  <div class="lang-toggle">
+    <button class="lang-btn active" id="btn-en" onclick="setLang('en')">🇺🇸 English</button>
+    <button class="lang-btn" id="btn-es" onclick="setLang('es')">🇲🇽 Español</button>
+  </div>
+  <button class="admin-link" onclick="location.href='/admin.html'">⚙️ Admin</button>
+</header>
+
+<div class="hero">
+  <div class="hero-title">Safety Training</div>
+  <div class="hero-sub" id="hero-sub">Select a course below to begin your safety training. Complete each module to earn your certificate.</div>
+  <div class="hero-stats">
+    <div class="stat"><div class="stat-num" id="stat-courses">28</div><div class="stat-label">Total Courses</div></div>
+    <div class="stat"><div class="stat-num" id="stat-langs">2</div><div class="stat-label">Languages</div></div>
+    <div class="stat"><div class="stat-num">100%</div><div class="stat-label">OSHA Aligned</div></div>
+  </div>
+</div>
+
+<div class="section" id="course-section">
+  <div class="section-title" id="section-label">English Courses</div>
+  <div class="grid" id="course-grid">
+    <div style="color:#666;font-size:0.9em;padding:20px">Loading courses…</div>
+  </div>
+</div>
+
+<!-- Training Overlay -->
+<div id="overlay">
+  <div id="overlay-bar">
+    <span>🎓</span>
+    <span id="overlay-title">Loading…</span>
+    <button id="overlay-close" onclick="closeTraining()">✕ Close</button>
+  </div>
+  <iframe id="training-frame" src="about:blank" title="Safety Training Module"></iframe>
+</div>
+
+<!-- Toast notification -->
+<div id="toast">✅ Training complete! Certificate saved.</div>
+
+<footer>
+  <span>Commercial Roofing Rana LLC</span> · Safety Training Portal · All 28 courses available in English &amp; Spanish
+</footer>
+
+<script>
+// ── State ─────────────────────────────────────────────────────────────────────
+let allModules = [];
+let currentLang = 'en';
+const DONE_KEY = 'crr_completed';
+
+function getDone() {
+  try { return JSON.parse(localStorage.getItem(DONE_KEY) || '{}'); } catch(e) { return {}; }
+}
+function markDone(moduleId) {
+  const d = getDone(); d[moduleId] = Date.now(); localStorage.setItem(DONE_KEY, JSON.stringify(d));
+}
+
+// ── Language ──────────────────────────────────────────────────────────────────
+function setLang(lang) {
+  currentLang = lang;
+  document.getElementById('btn-en').classList.toggle('active', lang === 'en');
+  document.getElementById('btn-es').classList.toggle('active', lang === 'es');
+  document.getElementById('hero-sub').textContent = lang === 'es'
+    ? 'Seleccione un curso para comenzar su capacitación de seguridad. Complete cada módulo para obtener su certificado.'
+    : 'Select a course below to begin your safety training. Complete each module to earn your certificate.';
+  document.getElementById('section-label').textContent = lang === 'es' ? 'Cursos en Español' : 'English Courses';
+  renderGrid();
+}
+
+// ── Fetch modules ─────────────────────────────────────────────────────────────
+async function loadModules() {
+  try {
+    const res = await fetch('/api/modules');
+    allModules = await res.json();
+    renderGrid();
+  } catch(e) {
+    document.getElementById('course-grid').innerHTML = '<div style="color:#ef4444;padding:20px">Could not load modules. Make sure the server is running.</div>';
+  }
+}
+
+// ── Render grid ───────────────────────────────────────────────────────────────
+function renderGrid() {
+  const grid  = document.getElementById('course-grid');
+  const done  = getDone();
+  const mods  = allModules.filter(m => m.lang === currentLang);
+
+  if (!mods.length) { grid.innerHTML = '<div style="color:#666;padding:20px">No modules found.</div>'; return; }
+
+  grid.innerHTML = mods.map(m => {
+    const isDone = !!done[m.id];
+    return `
+    <div class="card" onclick="startTraining('${m.id}','${escHtml(m.title)}')">
+      <div class="card-top" style="background:${m.color}"></div>
+      ${isDone ? '<div class="card-done-badge">✓ Done</div>' : ''}
+      <div class="card-body">
+        <span class="card-icon">${m.icon}</span>
+        <div class="card-title">${escHtml(m.title)}</div>
+        <button class="card-btn ${isDone ? 'done' : 'start'}" onclick="event.stopPropagation();startTraining('${m.id}','${escHtml(m.title)}')">
+          ${isDone ? '↺ Retake' : '▶ Start Training'}
+        </button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function escHtml(s) { return s.replace(/'/g,"&#39;").replace(/"/g,'&quot;'); }
+
+// ── Open training ─────────────────────────────────────────────────────────────
+let activeModuleId = null;
+function startTraining(moduleId, title) {
+  activeModuleId = moduleId;
+  document.getElementById('overlay-title').textContent = title;
+  document.getElementById('training-frame').src = `/training/${moduleId}`;
+  document.getElementById('overlay').classList.add('open');
+  document.body.style.overflow = 'hidden';
+}
+
+function closeTraining() {
+  document.getElementById('training-frame').src = 'about:blank';
+  document.getElementById('overlay').classList.remove('open');
+  document.body.style.overflow = '';
+  activeModuleId = null;
+  renderGrid(); // refresh done badges
+}
+
+// ── Completion message listener ───────────────────────────────────────────────
+window.addEventListener('message', function(e) {
+  if (!e.data || e.data.type !== 'trainingComplete') return;
+  const { payload } = e.data;
+  if (payload && payload.moduleId) markDone(payload.moduleId);
+  showToast(currentLang === 'es'
+    ? `✅ ¡Capacitación completada! Certificado guardado para ${payload.employeeName || 'usted'}.`
+    : `✅ Training complete! Certificate saved for ${payload.employeeName || 'you'}.`
+  );
+  // Allow user to see certificate, then auto-close overlay after 3s
+  setTimeout(() => {
+    if (document.getElementById('overlay').classList.contains('open')) closeTraining();
+  }, 3000);
+});
+
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 5000);
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+loadModules();
+</script>
+</body>
+</html>
