@@ -225,24 +225,39 @@ function showToast(msg) {
   setTimeout(() => t.classList.remove('show'), 5000);
 }
 
-// ── Employee login state ──────────────────────────────────────────────────────
+// ── Employee login — required to access portal ────────────────────────────────
 function empBtnClick() {
-  const token = localStorage.getItem('crr_employee_token');
-  location.href = token ? '/dashboard.html' : '/login.html';
+  location.href = '/dashboard.html';
 }
 
-(function checkEmpLogin() {
+(function requireLogin() {
   const token = localStorage.getItem('crr_employee_token');
-  const name  = localStorage.getItem('crr_employee_name');
-  const btn   = document.getElementById('emp-btn');
-  if (token && name) {
-    btn.textContent = '👤 ' + name.split(' ')[0];
-    btn.title = 'View my training record';
-    // Verify token is still valid
-    fetch('/api/auth/me', { headers: {'x-employee-token': token} })
-      .then(r => { if (!r.ok) { localStorage.removeItem('crr_employee_token'); localStorage.removeItem('crr_employee_name'); btn.textContent = '👤 Sign In'; } })
-      .catch(() => {});
+  if (!token) {
+    sessionStorage.setItem('crr_login_redirect', '/');
+    location.href = '/login.html';
+    return;
   }
+  // Verify token is still valid; boot to login if expired
+  fetch('/api/auth/me', { headers: {'x-employee-token': token} })
+    .then(r => {
+      if (!r.ok) {
+        localStorage.removeItem('crr_employee_token');
+        localStorage.removeItem('crr_employee_name');
+        sessionStorage.setItem('crr_login_redirect', '/');
+        location.href = '/login.html';
+        return;
+      }
+      return r.json();
+    })
+    .then(data => {
+      if (!data) return;
+      const name = data.name || localStorage.getItem('crr_employee_name') || '';
+      localStorage.setItem('crr_employee_name', name);
+      const btn = document.getElementById('emp-btn');
+      btn.textContent = '👤 ' + name.split(' ')[0];
+      btn.title = 'View my training record';
+    })
+    .catch(() => {});
 })();
 
 // ── Init ──────────────────────────────────────────────────────────────────────
