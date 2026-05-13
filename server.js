@@ -130,6 +130,17 @@ app.use(express.static(path.join(__dirname, 'public')));
 const INJECT_SCRIPT = `
 <script>
 (function(){
+  // Create hidden placeholder elements for any time-spent IDs that were removed
+  // from the HTML but are still referenced by submitAck in some training files.
+  // Without these, submitAck crashes on null.textContent and tracking never fires.
+  ['cert-time','pcert-time','ct','print-time'].forEach(function(id){
+    if(!document.getElementById(id)){
+      var d=document.createElement('div');
+      d.id=id;d.style.display='none';
+      document.body.appendChild(d);
+    }
+  });
+
   function getText(ids){
     for(var i=0;i<ids.length;i++){
       var el=document.getElementById(ids[i]);
@@ -141,39 +152,42 @@ const INJECT_SCRIPT = `
     for(var i=0;i<ids.length;i++){var el=document.getElementById(ids[i]);if(el) return el;}
     return null;
   }
+
+  function sendCompletion(){
+    var name=getText(['cert-name','cert-employee-name','cn2'])||window.employeeName||'';
+    var date=getText(['cert-date','cert-date-out','cd']);
+    var score=getText(['cert-score','cs']);
+    var certEl=getEl(['certificate','cert-card','cert']);
+    var payload={
+      employeeName:    name,
+      moduleId:        window.__CRR_MODULE_ID__||'',
+      moduleTitle:     window.__CRR_MODULE_TITLE__||document.title,
+      language:        window.__CRR_MODULE_LANG__||'en',
+      dateCompleted:   date,
+      quizScore:       score,
+      certificateHTML: certEl?certEl.outerHTML:''
+    };
+    console.log('[CRR] Sending completion:', payload.moduleTitle, payload.employeeName);
+    fetch('/api/complete',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(payload)
+    })
+    .then(function(r){return r.json();})
+    .then(function(res){
+      console.log('[CRR] Saved, id:', res.id);
+      window.__CRR_COMPLETION_ID__=res.id;
+      if(window.parent&&window.parent!==window){
+        window.parent.postMessage({type:'trainingComplete',payload:payload,id:res.id},'*');
+      }
+    })
+    .catch(function(e){console.warn('[CRR] Save error:',e);});
+  }
+
   var _orig=window.submitAck;
   window.submitAck=function(){
-    if(_orig) _orig.call(this);
-    setTimeout(function(){
-      var name=getText(['cert-name','cert-employee-name','cn2'])||window.employeeName||'';
-      var date=getText(['cert-date','cert-date-out','cd']);
-      var score=getText(['cert-score','cs']);
-      var certEl=getEl(['certificate','cert-card','cert']);
-      var payload={
-        employeeName:    name,
-        moduleId:        window.__CRR_MODULE_ID__||'',
-        moduleTitle:     window.__CRR_MODULE_TITLE__||document.title,
-        language:        window.__CRR_MODULE_LANG__||'en',
-        dateCompleted:   date,
-        quizScore:       score,
-        certificateHTML: certEl?certEl.outerHTML:''
-      };
-      console.log('[CRR] Sending completion:', payload.moduleTitle, payload.employeeName);
-      fetch('/api/complete',{
-        method:'POST',
-        headers:{'Content-Type':'application/json'},
-        body:JSON.stringify(payload)
-      })
-      .then(function(r){return r.json();})
-      .then(function(res){
-        console.log('[CRR] Saved, id:', res.id);
-        window.__CRR_COMPLETION_ID__=res.id;
-        if(window.parent&&window.parent!==window){
-          window.parent.postMessage({type:'trainingComplete',payload:payload,id:res.id},'*');
-        }
-      })
-      .catch(function(e){console.warn('[CRR] Save error:',e);});
-    },1500);
+    try{ if(_orig) _orig.call(this); }catch(e){ console.warn('[CRR] submitAck error (non-fatal):',e); }
+    setTimeout(sendCompletion,1500);
   };
 })();
 </script>
@@ -254,16 +268,23 @@ app.get('/api/admin/completions', adminAuth, async (req, res) => {
 // ── Admin: stats ──────────────────────────────────────────────────────────────
 app.get('/api/admin/stats', adminAuth, async (req, res) => {
   try {
-    const [{ c: total }]     = await query('SELECT COUNT(*) AS c FROM completions');
-    const [{ c: people }]    = await query('SELECT COUNT(DISTINCT employee_name) AS c FROM completions');
-    const [{ c: thisMonth }] = await query(`SELECT COUNT(*) AS c FROM completions WHERE created_at >= date_trunc('month', NOW())`).catch(() =>
-      query("SELECT COUNT(*) AS c FROM completions WHERE strftime('%Y-%m',created_at)=strftime('%Y-%m','now')")
-    );
-    const [{ c: today }]     = await query(`SELECT COUNT(*) AS c FROM completions WHERE created_at >= CURRENT_DATE`).catch(() =>
-      query("SELECT COUNT(*) AS c FROM completions WHERE date(created_at)=date('now')")
-    );
+    const isPg = !!process.env.DATABASE_URL;
+    const [r1] = await query('SELECT COUNT(*) AS c FROM completions');
+    const [r2] = await query('SELECT COUNT(DISTINCT employee_name) AS c FROM completions');
+    const [r3] = isPg
+      ? await query(`SELECT COUNT(*) AS c FROM completions WHERE created_at >= date_trunc('month', NOW())`)
+      : await query("SELECT COUNT(*) AS c FROM completions WHERE strftime('%Y-%m',created_at)=strftime('%Y-%m','now')");
+    const [r4] = isPg
+      ? await query(`SELECT COUNT(*) AS c FROM completions WHERE created_at >= CURRENT_DATE`)
+      : await query("SELECT COUNT(*) AS c FROM completions WHERE date(created_at)=date('now')");
     const topModules = await query('SELECT module_title, COUNT(*) AS c FROM completions GROUP BY module_title ORDER BY c DESC LIMIT 5');
-    res.json({ total, people, thisMonth, today, topModules });
+    res.json({
+      total:     Number(r1.c),
+      people:    Number(r2.c),
+      thisMonth: Number(r3.c),
+      today:     Number(r4.c),
+      topModules: topModules.map(r => ({ module_title: r.module_title, c: Number(r.c) }))
+    });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
