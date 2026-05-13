@@ -161,11 +161,12 @@ app.get('/api/modules', (req, res) => {
 // ── Public API: save completion ───────────────────────────────────────────────
 app.post('/api/complete', (req, res) => {
   const { employeeName, moduleId, moduleTitle, language, dateCompleted, timeSpent, quizScore, certificateHTML } = req.body;
-  if (!employeeName || !moduleTitle) return res.status(400).json({ error: 'Missing required fields' });
+  if (!moduleTitle) return res.status(400).json({ error: 'Missing required fields' });
+  const name = (employeeName || '').trim() || 'Unknown';
   const r = db.prepare(`
     INSERT INTO completions (employee_name, module_id, module_title, language, date_completed, time_spent, quiz_score, certificate_html)
     VALUES (?,?,?,?,?,?,?,?)
-  `).run(employeeName, moduleId||'', moduleTitle, language||'en', dateCompleted||'', timeSpent||'', quizScore||'', certificateHTML||'');
+  `).run(name, moduleId||'', moduleTitle, language||'en', dateCompleted||'', timeSpent||'', quizScore||'', certificateHTML||'');
   res.json({ success: true, id: r.lastInsertRowid });
 });
 
